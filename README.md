@@ -1,7 +1,7 @@
 # norns
 Sketches for the monome norns audio device
 
-##Walkabout
+## Walkabout
 
 This is a little 8x8 sequencer (8 sequences, 8 steps each) that allows quick
 switching among sequences, auto-saves changes when sleeping or switching
