@@ -1,5 +1,6 @@
 -- walkabout.lua
 -- A slider-based sequencer
+-- PolyPerc output - and MIDI
 --
 -- enc2 = select sequence #
 -- enc3 = set step value
@@ -12,9 +13,13 @@
 -- enc1 = change setting
 --
 -- sequencer values auto-saved
--- on select or shutdown
+-- on select or shutdown to
+-- "data/ddg/walkabout.data"
 --
--- writes to "data/ddg/walkabout.data"
+-- V1.1:
+-- MIDI output on the first
+-- device encountered, on
+-- channel 1
 
 engine.name = "PolyPerc"
 
@@ -41,6 +46,8 @@ local sq = {
 local ed = {}
 local st = {}
 
+local midi_device
+local midi_msg
 
 -- -----------------------
 -- initialization routine
@@ -77,8 +84,11 @@ function init()
     end
 
   counter = metro.alloc(count, 0.125, -1)
+  counter2 = metro.alloc(noteoff_count)
+
   -- comment out the next line if you don't want to start running
   st.running:set(2)
+
 end
 
 
@@ -129,6 +139,26 @@ function play()
   local m = sq[ed.cseq][st.curloc + 1]
   if (m > 0) then
     engine.hz(midi_to_hz(m + 36))
+
+    if (midi_device) then
+      print("note on: " .. m + 36)
+      midi_msg = {144, m + 36, 127}
+      midi_device:send(midi_msg)
+      counter2:start(0.01, 1)
+    end
+  end
+end
+
+
+-- ---------------------------
+-- deal with a note-off timer.
+-- ---------------------------
+function noteoff_count()
+  if (midi_device and midi_msg) then
+    print("note off: " .. midi_msg[2])
+    midi_msg[3] = 0
+    midi_device:send(midi_msg)
+    midi_msg = nil
   end
 end
 
@@ -138,6 +168,36 @@ end
 -- -----------------------------------
 function midi_to_hz(note)
   return (440/32) * (2 ^ ((note - 9) / 12))
+end
+
+
+-- -----------------------------------------------
+-- deal with a new midi device add (incl startup).
+-- -----------------------------------------------
+function midi.add(dev)
+  if not midi_device then
+    print("adding device:" .. dev.name)
+    dev.event = midi_event
+    dev.remove = midi_remove
+    midi_device = dev
+  end
+end
+
+
+-- ---------------------------
+-- deal with a device removal.
+-- ---------------------------
+function midi_remove()
+  print("dev.remove called...")
+  midi_device = nil
+end
+
+
+-- --------------------------------------------
+-- deal with a MIDI event receipt (future use).
+-- --------------------------------------------
+local function midi_event(data)
+  print("Midi event received...")
 end
 
 
