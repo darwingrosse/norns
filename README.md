@@ -17,8 +17,11 @@ menu for selecting and setting things like run status, tempo and direction.
 It's easiest to check out the video for this:
 
 <a href="http://www.youtube.com/watch?feature=player_embedded&v=af6aXKQBDak
-" target="_blank"><img src="http://img.youtube.com/vi/af6aXKQBDak/0.jpg"
+"><img src="http://img.youtube.com/vi/af6aXKQBDak/0.jpg"
 alt="IMAGE ALT TEXT HERE" width="240" height="180" border="10" /></a>
 
-v 1.1: Notes are output on MIDI, the first device encountered, channel 1, with
+v.1.1: Notes are output on MIDI, the first device encountered, channel 1, with
 a gate time of 10 ms.
+
+v.1.2: Use the 'Parameters' to set MIDI settings, and store MIDI settings in
+'data/ddg/walkabout_midi.data'
