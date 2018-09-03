@@ -25,3 +25,6 @@ a gate time of 10 ms.
 
 v.1.2: Use the 'Parameters' to set MIDI settings, and store MIDI settings in
 'data/ddg/walkabout_midi.data'
+
+v.1.3: Updated for the 180828 norns update, including support for the new
+MIDI functions and parameter storage in a standard PSET file.
