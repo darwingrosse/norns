@@ -12,7 +12,7 @@
 -- alt-enc1 = select setting
 -- enc1 = change setting
 --
--- parameters set/store MIDI
+-- parameters set MIDI
 
 engine.name = "PolyPerc"
 
@@ -40,17 +40,23 @@ local ed = {}
 local st = {}
 
 local md = {
-  midi_on = false,
-  midi_number = 1,
+  _startup = true,
+  _available = false,
+  _devlist = {"none"},
 
+  midi_on = false,
+  midi_msg = nil,
+  midi_name = "none",
   midi_device = nil,
-  midi_note = nil
 }
 
 -- -----------------------
 -- initialization routine
 -- -----------------------
 function init()
+  -- environment setup
+  encoders.set_sens(2, .01)
+
   -- sq (sequence) data setup
   walkabout_load()
 
@@ -86,27 +92,31 @@ function init()
 
   -- comment out the next line if you don't want to start running
   st.running:set(2)
+end
 
-  -- parameter setup...
-  params:add_option("midi_on", {"off", "on"})
-  params:set_action("midi_on",
-    function(x)
-      md.midi_on = (x == 2)
-      if (md.midi_on) then
-        md.midi_device = midi.connect()
-      end
+
+-- ------------------------
+-- parameter setup routine.
+-- ------------------------
+function setup_params()
+  if (md._available) then
+    params:clear()
+    params:add_option("midi_on", {"off", "on"})
+    params:set_action("midi_on", function(x) md.midi_on = (x == 2) end)
+    params:add_option("midi_device", md._devlist)
+    params:set_action("midi_device", function(x) selectMidiDevice(md._devlist[x]) end)
+
+    if (md._startup) then
+      walkabout_loadmidi()
+      md._startup = false
     end
-  )
 
-  params:add_number("midi_device", 1, 4, 1)
-  params:set_action("midi_device",
-    function(x)
-      md.midi_number = x
-      md.midi_device = midi.connect()
-    end
-  )
-
-  params:read("ddg/walkabout.pset")
+    if md.midi_on then params:set("midi_on", 2)
+    else params:set("midi_on", 1) end
+    params:set("midi_device", getMidiIndex(md.midi_name))
+  else
+    params:clear()
+  end
 end
 
 
@@ -293,20 +303,111 @@ end
 -- ------------------------------
 function cleanup()
   -- make sure we hard-stop the metros
-  -- and clean up midi
   counter:stop()
   counter2:stop()
-  noteoff_count()
 
   -- save all the data!
   walkabout_save()
-  params:write("ddg/walkabout.pset")
+  walkabout_savemidi()
 end
 
 
 -- =======================================================================
--- MIDI I/O Routines
+-- MIDI Handling Routines
 -- =======================================================================
+
+
+-- ---------------------------
+-- select a named MIDI device.
+-- ---------------------------
+function selectMidiDevice(n)
+  -- first, deal with clearing out the old...
+  if (md.midi_device) then
+    if (md.midi_device.name == n) then return
+    else md.midi_device = nil end
+  end
+
+  -- next, check if it is valid
+  local dev = getMidiDevice(n)
+  if (not dev) then return end
+
+  -- finally, set the dinner plates!
+  md.midi_name = dev.name
+  md.midi_device = dev
+end
+
+
+-- ---------------------------
+-- find a MIDI device by name.
+-- ---------------------------
+function getMidiDevice(n)
+  for i,dev in pairs(midi.devices) do
+    if (dev.name == n) then
+      return dev
+    end
+  end
+  return nil
+end
+
+
+-- --------------------------
+-- find a MIDI index by name.
+-- --------------------------
+function getMidiIndex(n)
+  for i,v in ipairs(md._devlist) do
+    if (v == n) then return i end
+  end
+  return 1
+end
+
+
+-- -----------------------------------------------
+-- deal with a new midi device add (incl startup).
+-- -----------------------------------------------
+function midi.add(dev)
+  md._available = false
+  md._devlist = {"none"}
+
+  if (midi.devices) then
+    for i,v in pairs(midi.devices) do
+      md._available = true
+      table.insert(md._devlist, v.name)
+    end
+  end
+
+  setup_params()
+end
+
+
+-- ---------------------------
+-- deal with a device removal.
+-- ---------------------------
+function midi.remove(dev)
+  -- only do this at the class level...
+  if (dev) then
+    local testname = dev.name
+
+    md._available = false
+    md._devlist = {"none"}
+
+    if (midi.devices) then
+      for i,v in pairs(midi.devices) do
+        if (v.name ~= testname) then
+          md._available = true
+          table.insert(md._devlist, v.name)
+        end
+      end
+    end
+
+    if (testname == md.midi_name) then
+      md.midi_on = false
+      md.midi_name = "none"
+      md.midi_device = nil
+    end
+
+    setup_params()
+  end
+end
 
 
 -- --------------------------------------
@@ -316,8 +417,9 @@ function midi_noteon(note)
   if (not md.midi_on) then return end
   if (not md.midi_device) then return end
 
-  md.midi_device.note_on(note, 127)
-  md.midi_note = note
+  -- print("note on to " .. md.midi_device.name .. ": " .. note)
+  md.midi_msg = {144, note, 127}
+  md.midi_device:send(md.midi_msg)
   counter2:start(0.01, 1)
 end
 
@@ -326,9 +428,11 @@ end
 -- deal with a note-off timer.
 -- ---------------------------
 function noteoff_count()
-  if (md.midi_device and md.midi_note) then
-    md.midi_device.note_off(md.midi_note)
-    md.midi_note = nil
+  if (md.midi_device and md.midi_msg) then
+    -- print("note off: " .. md.midi_msg[2])
+    md.midi_msg[3] = 0
+    md.midi_device:send(md.midi_msg)
+    md.midi_msg = nil
   end
 end
 
@@ -358,6 +462,26 @@ end
 
 
 -- -------------------------------
+-- save the MIDI setup to storage.
+-- -------------------------------
+function walkabout_savemidi()
+  if (not isdir(data_dir .. "ddg")) then
+    os.execute("mkdir " .. data_dir .. "ddg")
+  end
+
+  tab.print(md)
+
+  local fd=io.open(data_dir .. "ddg/walkabout_midi.data","w+")
+  io.output(fd)
+  io.write("1\n") -- version number
+  if (md.midi_on) then io.write("true\n")
+  else io.write("false\n") end
+  io.write(md.midi_name .. "\n")
+  io.close(fd)
+end
+
+
+-- -------------------------------
 -- load the set data from storage.
 -- -------------------------------
 function walkabout_load()
@@ -374,6 +498,27 @@ function walkabout_load()
     io.close(fd)
   else
     print("datafile not found")
+  end
+end
+
+
+-- ---------------------------------
+-- load the MIDI setup from storage.
+-- ---------------------------------
+function walkabout_loadmidi()
+  local fd=io.open(data_dir .. "ddg/walkabout_midi.data","r")
+
+  if fd then
+    print("midi setup found")
+    io.input(fd)
+    local version = tonumber(io.read())
+    if (version > 0) then
+      md.midi_on = (io.read() == "true")
+      md.midi_name = io.read()
+    end
+    io.close(fd)
+  else
+    print("midi setup not found")
   end
 end
 
